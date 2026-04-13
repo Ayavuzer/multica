@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: multica-pgdata
+  namespace: multica
+spec:
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multica-postgres
+  namespace: multica
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: multica-postgres
+  template:
+    metadata:
+      labels:
+        app: multica-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "multica"
+            - name: POSTGRES_PASSWORD
+              value: "multica"
+            - name: POSTGRES_DB
+              value: "multica"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: multica-pgdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multica-postgres
+  namespace: multica
+spec:
+  selector:
+    app: multica-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

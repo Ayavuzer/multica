@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multica-backend
+  namespace: multica
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multica-backend
+  template:
+    metadata:
+      labels:
+        app: multica-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/ayavuzer/multica-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: multica-env
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      imagePullSecrets:
+        - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multica-backend
+  namespace: multica
+spec:
+  selector:
+    app: multica-backend
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -12,6 +12,7 @@ import (
 // skills into the appropriate provider-native location.
 //
 // Claude:   skills → {workDir}/.claude/skills/{name}/SKILL.md  (native discovery)
+// Gemini:   skills → {workDir}/.gemini/skills/{name}/SKILL.md  (native discovery)
 // Codex:    skills → handled separately in Prepare via codex-home
 // OpenCode: skills → {workDir}/.config/opencode/skills/{name}/SKILL.md  (native discovery)
 // Default:  skills → {workDir}/.agent_context/skills/{name}/SKILL.md
@@ -51,6 +52,9 @@ func resolveSkillsDir(workDir, provider string) (string, error) {
 	case "claude":
 		// Claude Code natively discovers skills from .claude/skills/ in the workdir.
 		skillsDir = filepath.Join(workDir, ".claude", "skills")
+	case "gemini":
+		// Gemini CLI natively discovers skills from .gemini/skills/ in the workdir.
+		skillsDir = filepath.Join(workDir, ".gemini", "skills")
 	case "opencode":
 		// OpenCode natively discovers skills from .config/opencode/skills/ in the workdir.
 		skillsDir = filepath.Join(workDir, ".config", "opencode", "skills")

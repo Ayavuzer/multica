@@ -887,9 +887,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 		instructions = task.Agent.Instructions
 	}
 
-	// Prepare isolated execution environment.
-	// Repos are passed as metadata only — the agent checks them out on demand
-	// via `multica repo checkout <url>`.
+	// Prepare execution environment.
+	// If a local repo path is configured, run directly in that directory.
+	// Otherwise, create an isolated sandbox workdir.
 	taskCtx := execenv.TaskContextForEnv{
 		IssueID:           task.IssueID,
 		TriggerCommentID:  task.TriggerCommentID,
@@ -898,6 +898,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 		AgentSkills:       convertSkillsForEnv(skills),
 		Repos:             convertReposForEnv(task.Repos),
 		ChatSessionID:     task.ChatSessionID,
+	}
+
+	// Detect local repo: if a repo URL is an absolute path that exists on disk,
+	// use it directly as the workdir so the agent has full filesystem access.
+	var localRepoPath string
+	for _, repo := range task.Repos {
+		if filepath.IsAbs(repo.URL) {
+			if info, err := os.Stat(repo.URL); err == nil && info.IsDir() {
+				localRepoPath = repo.URL
+				taskLog.Info("using local repo as workdir", "path", localRepoPath)
+				break
+			}
+		}
 	}
 
 	// Try to reuse the workdir from a previous task on the same (agent, issue) pair.
@@ -914,6 +927,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 			AgentName:      agentName,
 			Provider:       provider,
 			Task:           taskCtx,
+			LocalRepoPath:  localRepoPath,
 		}, d.logger)
 		if err != nil {
 			return TaskResult{}, fmt.Errorf("prepare execution environment: %w", err)

@@ -1,0 +1,43 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: multica-ingress
+  namespace: multica
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Cloudflare handles TLS — don't redirect again
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # WebSocket support — daemon long-lived connections
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - multica.mindops.net
+        - multica-api.mindops.net
+      secretName: multica-tls
+  rules:
+    # Frontend — browser erişimi
+    - host: multica.mindops.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: multica-frontend
+                port:
+                  number: 3000
+    # Backend API — daemon WSS + auth callback erişimi
+    - host: multica-api.mindops.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: multica-backend
+                port:
+                  number: 8080

@@ -24,6 +24,7 @@ type PrepareParams struct {
 	AgentName      string           // for git branch naming only
 	Provider       string           // agent provider ("claude", "codex") — determines skill injection paths
 	Task           TaskContextForEnv // context data for writing files
+	LocalRepoPath  string           // if set, use this directory as workdir instead of a sandbox
 }
 
 // TaskContextForEnv is the subset of task context used for writing context files.
@@ -62,9 +63,9 @@ type Environment struct {
 	logger *slog.Logger // for cleanup logging
 }
 
-// Prepare creates an isolated execution environment for a task.
-// The workdir starts empty (no repo checkouts). The agent checks out repos
-// on demand via `multica repo checkout <url>`.
+// Prepare creates an execution environment for a task.
+// If LocalRepoPath is set, the agent runs directly in that directory (no sandbox).
+// Otherwise, an isolated workdir is created and repos are checked out on demand.
 func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	if params.WorkspacesRoot == "" {
 		return nil, fmt.Errorf("execenv: workspaces root is required")
@@ -77,6 +78,37 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	envRoot := filepath.Join(params.WorkspacesRoot, params.WorkspaceID, shortID(params.TaskID))
+
+	// ── Local repo mode: run directly in the project directory ──────────
+	if params.LocalRepoPath != "" {
+		// Verify the path exists.
+		if _, err := os.Stat(params.LocalRepoPath); err != nil {
+			return nil, fmt.Errorf("execenv: local repo path does not exist: %w", err)
+		}
+
+		// Create envRoot for logs/output only (workdir is the real repo).
+		for _, dir := range []string{filepath.Join(envRoot, "output"), filepath.Join(envRoot, "logs")} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return nil, fmt.Errorf("execenv: create directory %s: %w", dir, err)
+			}
+		}
+
+		env := &Environment{
+			RootDir: envRoot,
+			WorkDir: params.LocalRepoPath,
+			logger:  logger,
+		}
+
+		// Write context files into the real repo directory.
+		if err := writeContextFiles(params.LocalRepoPath, params.Provider, params.Task); err != nil {
+			return nil, fmt.Errorf("execenv: write context files: %w", err)
+		}
+
+		logger.Info("execenv: prepared env (local repo)", "root", envRoot, "workdir", params.LocalRepoPath)
+		return env, nil
+	}
+
+	// ── Sandbox mode (default): isolated workdir ────────────────────────
 
 	// Remove existing env if present (defensive — task IDs are unique).
 	if _, err := os.Stat(envRoot); err == nil {
