@@ -316,6 +316,19 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, analytics
 				})
 			})
 
+			// Memories
+			r.Route("/api/memories", func(r chi.Router) {
+				r.Get("/", h.ListMemories)
+				r.Get("/search", h.SearchMemories)
+				r.Post("/propose", h.ProposeMemory)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetMemory)
+					r.Post("/approve", h.ApproveMemory)
+					r.Post("/reject", h.RejectMemory)
+					r.Post("/revoke", h.RevokeMemory)
+				})
+			})
+
 			// Pins
 			r.Route("/api/pins", func(r chi.Router) {
 				r.Get("/", h.ListPins)

@@ -22,6 +22,17 @@ type RepoData struct {
 	Description string `json:"description"`
 }
 
+// MemoryData is an approved memory entry injected into the runtime context.
+type MemoryData struct {
+	ID              string  `json:"id"`
+	ScopeType       string  `json:"scope_type"`
+	ScopeID         *string `json:"scope_id,omitempty"`
+	Title           string  `json:"title"`
+	Content         string  `json:"content"`
+	SourceIssueID   *string `json:"source_issue_id,omitempty"`
+	SourceCommentID *string `json:"source_comment_id,omitempty"`
+}
+
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
@@ -32,6 +43,7 @@ type Task struct {
 	WorkspaceID             string          `json:"workspace_id"`
 	Agent                   *AgentData      `json:"agent,omitempty"`
 	Repos                   []RepoData      `json:"repos,omitempty"`
+	Memories                []MemoryData    `json:"memories,omitempty"`
 	PriorSessionID          string          `json:"prior_session_id,omitempty"`          // Claude session ID from a previous task on this issue
 	PriorWorkDir            string          `json:"prior_work_dir,omitempty"`            // work_dir from a previous task on this issue
 	TriggerCommentID        string          `json:"trigger_comment_id,omitempty"`        // comment that triggered this task

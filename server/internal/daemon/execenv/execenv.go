@@ -18,6 +18,17 @@ type RepoContextForEnv struct {
 	Description string // human-readable description
 }
 
+// MemoryContextForEnv describes an approved platform memory entry.
+type MemoryContextForEnv struct {
+	ID              string
+	ScopeType       string
+	ScopeID         *string
+	Title           string
+	Content         string
+	SourceIssueID   *string
+	SourceCommentID *string
+}
+
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
 	WorkspacesRoot string            // base path for all envs (e.g., ~/multica_workspaces)
@@ -38,8 +49,9 @@ type TaskContextForEnv struct {
 	AgentInstructions       string // agent identity/persona instructions, injected into CLAUDE.md
 	AgentSkills             []SkillContextForEnv
 	Repos                   []RepoContextForEnv // workspace repos available for checkout
-	ChatSessionID           string              // non-empty for chat tasks
-	AutopilotRunID          string              // non-empty for autopilot run_only tasks
+	Memories                []MemoryContextForEnv
+	ChatSessionID           string // non-empty for chat tasks
+	AutopilotRunID          string // non-empty for autopilot run_only tasks
 	AutopilotID             string
 	AutopilotTitle          string
 	AutopilotDescription    string

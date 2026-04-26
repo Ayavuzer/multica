@@ -80,7 +80,10 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- `multica attachment download <id> [-o <dir>]` — Download an attachment file locally by ID\n")
 	b.WriteString("- `multica autopilot list [--status X] --output json` — List autopilots (scheduled/triggered agent automations) in the workspace\n")
 	b.WriteString("- `multica autopilot get <id> --output json` — Get autopilot details including triggers\n")
-	b.WriteString("- `multica autopilot runs <id> [--limit N] --output json` — List execution history for an autopilot\n\n")
+	b.WriteString("- `multica autopilot runs <id> [--limit N] --output json` — List execution history for an autopilot\n")
+	b.WriteString("- `multica memory list [--status approved|pending|rejected|revoked] --output json` — List workspace memory entries\n")
+	b.WriteString("- `multica memory get <id> --output json` — Get a memory entry\n")
+	b.WriteString("- `multica memory search <query> --output json` — Search memory entries\n\n")
 
 	b.WriteString("### Write\n")
 	b.WriteString("- `multica issue create --title \"...\" [--description \"...\"] [--priority X] [--assignee X] [--parent <issue-id>] [--status X]` — Create a new issue\n")
@@ -93,7 +96,11 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- `multica autopilot create --title \"...\" --agent <name> --mode create_issue [--description \"...\"]` — Create an autopilot\n")
 	b.WriteString("- `multica autopilot update <id> [--title X] [--description X] [--status active|paused]` — Update an autopilot\n")
 	b.WriteString("- `multica autopilot trigger <id>` — Manually trigger an autopilot to run once\n")
-	b.WriteString("- `multica autopilot delete <id>` — Delete an autopilot\n\n")
+	b.WriteString("- `multica autopilot delete <id>` — Delete an autopilot\n")
+	b.WriteString("- `multica memory propose --title \"...\" --content \"...\" [--scope workspace|project|agent|issue] [--scope-id <id>] [--source-issue <id>] [--source-comment <id>]` — Propose a guarded memory entry for review\n")
+	b.WriteString("- `multica memory approve <id> [--review-note \"...\"] [--source-issue <id>] [--source-comment <id>]` — Approve a pending memory entry; agent reviewers cannot review their own proposals\n")
+	b.WriteString("- `multica memory reject <id> [--review-note \"...\"] [--source-issue <id>] [--source-comment <id>]` — Reject a pending memory entry\n")
+	b.WriteString("- `multica memory revoke <id> [--review-note \"...\"] [--source-issue <id>] [--source-comment <id>]` — Revoke an approved memory entry (owner/admin)\n\n")
 
 	// Inject available repositories section.
 	if len(ctx.Repos) > 0 {
@@ -110,6 +117,27 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 			fmt.Fprintf(&b, "| %s | %s |\n", repo.URL, desc)
 		}
 		b.WriteString("\nThe checkout command creates a git worktree with a dedicated branch. You can check out one or more repos as needed.\n\n")
+	}
+
+	if len(ctx.Memories) > 0 {
+		b.WriteString("## Approved Memory\n\n")
+		b.WriteString("Use these approved memory entries as platform context. Do not persist new secrets or personal data into memory.\n\n")
+		for _, memory := range ctx.Memories {
+			fmt.Fprintf(&b, "### %s\n\n", memory.Title)
+			fmt.Fprintf(&b, "- Scope: `%s", memory.ScopeType)
+			if memory.ScopeID != nil && *memory.ScopeID != "" {
+				fmt.Fprintf(&b, ":%s", *memory.ScopeID)
+			}
+			b.WriteString("`\n")
+			if memory.SourceCommentID != nil && *memory.SourceCommentID != "" {
+				fmt.Fprintf(&b, "- Source comment: `%s`\n", *memory.SourceCommentID)
+			} else if memory.SourceIssueID != nil && *memory.SourceIssueID != "" {
+				fmt.Fprintf(&b, "- Source issue: `%s`\n", *memory.SourceIssueID)
+			}
+			b.WriteString("\n")
+			b.WriteString(memory.Content)
+			b.WriteString("\n\n")
+		}
 	}
 
 	b.WriteString("### Workflow\n\n")

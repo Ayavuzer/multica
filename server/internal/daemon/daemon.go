@@ -1044,6 +1044,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 		AgentInstructions:       instructions,
 		AgentSkills:             convertSkillsForEnv(skills),
 		Repos:                   convertReposForEnv(task.Repos),
+		Memories:                convertMemoriesForEnv(task.Memories),
 		ChatSessionID:           task.ChatSessionID,
 		AutopilotRunID:          task.AutopilotRunID,
 		AutopilotID:             task.AutopilotID,
@@ -1537,6 +1538,25 @@ func convertReposForEnv(repos []RepoData) []execenv.RepoContextForEnv {
 	result := make([]execenv.RepoContextForEnv, len(repos))
 	for i, r := range repos {
 		result[i] = execenv.RepoContextForEnv{URL: r.URL, Description: r.Description}
+	}
+	return result
+}
+
+func convertMemoriesForEnv(memories []MemoryData) []execenv.MemoryContextForEnv {
+	if len(memories) == 0 {
+		return nil
+	}
+	result := make([]execenv.MemoryContextForEnv, len(memories))
+	for i, memory := range memories {
+		result[i] = execenv.MemoryContextForEnv{
+			ID:              memory.ID,
+			ScopeType:       memory.ScopeType,
+			ScopeID:         memory.ScopeID,
+			Title:           memory.Title,
+			Content:         memory.Content,
+			SourceIssueID:   memory.SourceIssueID,
+			SourceCommentID: memory.SourceCommentID,
+		}
 	}
 	return result
 }

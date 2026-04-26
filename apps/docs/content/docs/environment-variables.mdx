@@ -107,6 +107,14 @@ Three allowlist layers combine by priority. **If any layer is set to a non-empty
 
 **Invite flows themselves do not check the signup allowlist** — but the invitee must still be able to **sign in** before accepting the invite. If they already have a Multica account (for example from another workspace), they can accept directly, unaffected by the allowlist; **if they have never signed up**, the first step of sign-in (requesting a verification code) still passes through the allowlist check, and an email rejected by `ALLOW_SIGNUP=false` or by `ALLOWED_EMAILS` / `ALLOWED_EMAIL_DOMAINS` **cannot finish signup, and therefore cannot accept the invite**.
 
+## Memory review
+
+| Variable | Default | Description |
+|---|---|---|
+| `MULTICA_MEMORY_REVIEW_AGENT_ALLOWLIST` | ARIA + Gemini IDs | Comma-separated agent IDs allowed to approve or reject eligible memory entries as independent reviewers. Self-review is always denied; owner/admin review remains allowed. |
+
+Leave this unset unless you need to replace the default hosted-workspace reviewer set. The server still enforces scope, guardrail, source issue, review note, audit, and rate-limit checks for agent reviewers.
+
 ## Daemon tuning parameters
 
 The daemon runs on the user's local machine, and its config is read from local environment variables too. The common ones:
