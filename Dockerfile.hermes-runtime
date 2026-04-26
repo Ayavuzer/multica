@@ -1,0 +1,90 @@
+# Multica Hermes Cloud Runtime
+# Daemon (Go) + hermes-agent (Python, Nous Research) in a single container.
+# Base: Debian slim — Python wheel compatibility, smaller than full Debian.
+#
+# Build: docker build -f Dockerfile.hermes-runtime -t multica-hermes-runtime:latest .
+# Push:  docker push ghcr.io/<owner>/multica-hermes-runtime:latest
+
+# ---------- Stage 1: Go build (multica daemon binary) ----------
+FROM golang:1.26-alpine AS go-builder
+
+RUN apk add --no-cache git
+WORKDIR /src
+
+# Cache dependencies first
+COPY server/go.mod server/go.sum ./server/
+RUN cd server && go mod download
+
+# Copy source and build
+COPY server/ ./server/
+
+ARG VERSION=hermes-runtime
+ARG COMMIT=unknown
+RUN cd server && CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+    -o bin/multica ./cmd/multica
+
+# ---------- Stage 2: Runtime ----------
+FROM python:3.11-slim-bookworm
+
+# OS deps for hermes-agent (git for skills, curl for installer, ca-certs for HTTPS, jq for entrypoint)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user — daemon and hermes both run as this user.
+# UID 999 matches K8s SecurityContext.runAsUser
+RUN groupadd -r -g 999 multica \
+    && useradd -r -u 999 -g multica -m -d /home/multica -s /bin/bash multica
+
+# Install uv (hermes-agent's package manager) globally
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && mv /root/.local/bin/uvx /usr/local/bin/uvx
+
+# Copy daemon binary
+COPY --from=go-builder /src/server/bin/multica /usr/local/bin/multica
+RUN chmod +x /usr/local/bin/multica
+
+# Switch to non-root user for hermes install (it builds in user dir)
+USER multica
+WORKDIR /home/multica
+
+# Install hermes-agent (Nous Research) into ~/.local
+# Pin via HERMES_VERSION build arg (default: latest from main)
+ARG HERMES_VERSION=latest
+RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+    | HERMES_VERSION=${HERMES_VERSION} bash || \
+    (echo "hermes installer failed — falling back to git clone" && \
+     git clone --depth=1 https://github.com/NousResearch/hermes-agent.git /home/multica/.hermes/hermes-agent && \
+     cd /home/multica/.hermes/hermes-agent && \
+     uv pip install --system --user -e . && \
+     ln -sf /home/multica/.hermes/hermes-agent/bin/hermes /home/multica/.local/bin/hermes)
+
+# PATH includes ~/.local/bin so daemon's exec.LookPath finds hermes
+ENV PATH="/home/multica/.local/bin:${PATH}"
+
+# Verify both binaries are present and runnable
+RUN /usr/local/bin/multica --version \
+    && /home/multica/.local/bin/hermes --version
+
+# Daemon defaults (can be overridden by K8s env)
+ENV MULTICA_HERMES_PATH=/home/multica/.local/bin/hermes
+ENV MULTICA_HERMES_MODEL=claude-sonnet-4-5
+ENV HERMES_YOLO_MODE=1
+ENV MULTICA_DAEMON_ID=hermes-cloud-runtime
+ENV MULTICA_DAEMON_DEVICE_NAME=hermes-cloud-runtime
+ENV MULTICA_AGENT_RUNTIME_NAME="Hermes Cloud Runtime"
+
+# Health probe port (multica daemon's local HTTP health endpoint)
+EXPOSE 19514
+
+# Entrypoint: import config from secret/env, then start daemon foreground
+COPY --chown=multica:multica docker/hermes-runtime-entrypoint.sh /home/multica/entrypoint.sh
+RUN chmod +x /home/multica/entrypoint.sh
+
+ENTRYPOINT ["/home/multica/entrypoint.sh"]

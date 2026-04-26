@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Multica Hermes Cloud Runtime — entrypoint
+# Bootstraps daemon auth config from K8s Secret, configures hermes provider,
+# then execs `multica daemon start --foreground`.
+set -euo pipefail
+
+CONFIG_DIR="${HOME}/.multica"
+SECRET_CONFIG="/etc/multica/config.json"
+
+mkdir -p "${CONFIG_DIR}"
+
+# ---------- Multica daemon auth ----------
+if [ -f "${SECRET_CONFIG}" ]; then
+    cp "${SECRET_CONFIG}" "${CONFIG_DIR}/config.json"
+    chmod 600 "${CONFIG_DIR}/config.json"
+    echo "[entrypoint] Loaded multica config from ${SECRET_CONFIG}"
+
+    # Sanity check: token must be present
+    if ! jq -e '.token | length > 0' "${CONFIG_DIR}/config.json" > /dev/null; then
+        echo "[entrypoint] ERROR: config.json has no token" >&2
+        exit 1
+    fi
+
+elif [ -n "${MULTICA_TOKEN:-}" ]; then
+    # Fallback: build config.json from env vars
+    cat > "${CONFIG_DIR}/config.json" <<EOF
+{
+  "server_url": "${MULTICA_SERVER_URL_HTTPS:-https://multica-api.mindops.net}",
+  "app_url": "${MULTICA_APP_URL:-https://multica.mindops.net}",
+  "workspace_id": "${MULTICA_WORKSPACE_ID:-}",
+  "token": "${MULTICA_TOKEN}",
+  "watched_workspaces": []
+}
+EOF
+    chmod 600 "${CONFIG_DIR}/config.json"
+    echo "[entrypoint] Built multica config from MULTICA_TOKEN env"
+else
+    echo "[entrypoint] ERROR: ${SECRET_CONFIG} not mounted and MULTICA_TOKEN not set" >&2
+    exit 1
+fi
+
+# ---------- Hermes provider config (Anthropic) ----------
+HERMES_HOME="${HOME}/.hermes"
+mkdir -p "${HERMES_HOME}"
+
+# Only run hermes login on first start — subsequent restarts use persisted config from PVC
+if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ ! -f "${HERMES_HOME}/.bootstrap-complete" ]; then
+    echo "[entrypoint] Bootstrapping hermes-agent provider config (first run)..."
+
+    # hermes login expects interactive prompt; use stdin pipe with the API key.
+    # Some hermes versions support --api-key flag; we try both.
+    if /home/multica/.local/bin/hermes login anthropic --api-key "${ANTHROPIC_API_KEY}" 2>/dev/null; then
+        echo "[entrypoint] hermes login anthropic --api-key succeeded"
+    else
+        echo "${ANTHROPIC_API_KEY}" | /home/multica/.local/bin/hermes login anthropic \
+            || echo "[entrypoint] WARN: hermes login anthropic via stdin failed (may need manual setup)"
+    fi
+
+    # Set default model (best-effort — hermes config command is interactive)
+    /home/multica/.local/bin/hermes model anthropic claude-sonnet-4-5 2>/dev/null \
+        || echo "[entrypoint] WARN: hermes model select failed (default will be picked from registry)"
+
+    touch "${HERMES_HOME}/.bootstrap-complete"
+fi
+
+# ---------- Start daemon ----------
+echo "[entrypoint] PATH=${PATH}"
+echo "[entrypoint] hermes binary: $(which hermes 2>/dev/null || echo NOT_FOUND)"
+echo "[entrypoint] multica binary: $(which multica 2>/dev/null || echo NOT_FOUND)"
+echo "[entrypoint] daemon ID: ${MULTICA_DAEMON_ID:-default}"
+echo "[entrypoint] server URL: ${MULTICA_SERVER_URL:-default}"
+echo "[entrypoint] Starting multica daemon (foreground)..."
+
+exec /usr/local/bin/multica daemon start --foreground

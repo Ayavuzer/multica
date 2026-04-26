@@ -1,0 +1,201 @@
+# Multica Hermes Cloud Runtime — daemon + hermes-agent in K8s pod.
+# Connects to existing multica-backend service via cluster-internal DNS.
+#
+# Apply:
+#   kubectl apply -f k8s/hermes-runtime.yaml
+#
+# Prerequisite Secrets (created via kubectl, NOT in version control):
+#   1. multica-hermes-runtime-pat — daemon auth (PAT from dashboard)
+#   2. multica-llm-secrets         — Anthropic API key for hermes provider
+# See README.md for kubectl create secret commands.
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: multica-hermes-home
+  namespace: multica
+  labels:
+    app: multica-hermes-runtime
+spec:
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: multica-hermes-workspaces
+  namespace: multica
+  labels:
+    app: multica-hermes-runtime
+spec:
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multica-hermes-runtime
+  namespace: multica
+  labels:
+    app: multica-hermes-runtime
+spec:
+  replicas: 1
+  strategy:
+    # RWO PVC — only one writer at a time. Recreate over RollingUpdate.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: multica-hermes-runtime
+  template:
+    metadata:
+      labels:
+        app: multica-hermes-runtime
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: hermes-runtime
+          image: ghcr.io/ayavuzer/multica-hermes-runtime:latest
+          imagePullPolicy: Always
+          env:
+            # ---- Daemon → backend (cluster-internal, bypass ingress) ----
+            - name: MULTICA_SERVER_URL
+              value: "ws://multica-backend.multica.svc.cluster.local:8080/ws"
+            - name: MULTICA_APP_URL
+              value: "https://multica.mindops.net"
+
+            # ---- Daemon identity (shown in dashboard) ----
+            - name: MULTICA_DAEMON_ID
+              value: "hermes-cloud-runtime"
+            - name: MULTICA_DAEMON_DEVICE_NAME
+              value: "hermes-cloud-runtime"
+            - name: MULTICA_AGENT_RUNTIME_NAME
+              value: "Hermes Cloud Runtime"
+
+            # ---- Hermes binary + default model ----
+            - name: MULTICA_HERMES_PATH
+              value: "/home/multica/.local/bin/hermes"
+            - name: MULTICA_HERMES_MODEL
+              value: "claude-sonnet-4-5"
+            - name: HERMES_YOLO_MODE
+              value: "1"
+
+            # ---- Disable other agent runtime detection ----
+            # Daemon probes PATH for each agent; setting paths to /nonexistent
+            # ensures only Hermes runtime registers from this pod.
+            - name: MULTICA_CLAUDE_PATH
+              value: "/nonexistent"
+            - name: MULTICA_CODEX_PATH
+              value: "/nonexistent"
+            - name: MULTICA_OPENCODE_PATH
+              value: "/nonexistent"
+            - name: MULTICA_OPENCLAW_PATH
+              value: "/nonexistent"
+            - name: MULTICA_GEMINI_PATH
+              value: "/nonexistent"
+
+            # ---- Daemon timing (production tuning) ----
+            - name: MULTICA_DAEMON_POLL_INTERVAL
+              value: "3s"
+            - name: MULTICA_DAEMON_HEARTBEAT_INTERVAL
+              value: "15s"
+            - name: MULTICA_DAEMON_MAX_CONCURRENT_TASKS
+              value: "5"
+            - name: MULTICA_AGENT_TIMEOUT
+              value: "30m"
+
+            # ---- Anthropic API key for hermes-agent ----
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: multica-llm-secrets
+                  key: anthropic-api-key
+
+          volumeMounts:
+            # Multica auth config (PAT) mounted from Secret
+            - name: multica-config
+              mountPath: /etc/multica
+              readOnly: true
+            # Hermes home: skills, sessions, memory persist across restarts
+            - name: hermes-home
+              mountPath: /home/multica/.hermes
+            # Multica daemon workspace scratch dirs
+            - name: multica-workspaces
+              mountPath: /home/multica/multica_workspaces
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 19514
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 19514
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "1500m"
+
+      volumes:
+        - name: multica-config
+          secret:
+            secretName: multica-hermes-runtime-pat
+            items:
+              - key: config.json
+                path: config.json
+            defaultMode: 0400
+        - name: hermes-home
+          persistentVolumeClaim:
+            claimName: multica-hermes-home
+        - name: multica-workspaces
+          persistentVolumeClaim:
+            claimName: multica-hermes-workspaces
+
+      imagePullSecrets:
+        - name: ghcr-secret
+
+---
+# Internal-only service for cluster-side health/observability scrapes.
+# NOT exposed via ingress — daemon is a client (outbound WS to backend), not a server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: multica-hermes-runtime
+  namespace: multica
+  labels:
+    app: multica-hermes-runtime
+spec:
+  type: ClusterIP
+  selector:
+    app: multica-hermes-runtime
+  ports:
+    - name: health
+      port: 19514
+      targetPort: 19514
