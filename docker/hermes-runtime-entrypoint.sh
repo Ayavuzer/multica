@@ -57,17 +57,17 @@ if [ ! -x "${HERMES_BIN}" ]; then
     export HERMES_SKIP_PLAYWRIGHT=1
     export HERMES_NO_BROWSER=1
 
-    if curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
-        | HERMES_VERSION="${HERMES_VERSION:-latest}" bash; then
-        echo "[entrypoint] hermes installer succeeded"
-    else
-        echo "[entrypoint] hermes installer failed — pod will exit, K8s will restart" >&2
-        echo "[entrypoint] Common cause: transient network failure. Liveness probe + restart will retry." >&2
-        exit 1
-    fi
+    # Run installer with stdin redirected from /dev/null to suppress
+    # interactive setup wizard at the end (it tries to open /dev/tty which
+    # doesn't exist in container, causing exit 1 even though binary is installed).
+    # We don't `&& exit` on failure — installer return code is unreliable
+    # because of the setup wizard step. Truth is: did binary land at HERMES_BIN?
+    curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+        | HERMES_VERSION="${HERMES_VERSION:-latest}" bash < /dev/null \
+        || echo "[entrypoint] WARN: installer returned non-zero (likely setup wizard /dev/tty fail — checking binary anyway)"
 
     if [ ! -x "${HERMES_BIN}" ]; then
-        echo "[entrypoint] ERROR: hermes binary not found at ${HERMES_BIN} after install" >&2
+        echo "[entrypoint] ERROR: hermes binary not found at ${HERMES_BIN} after install attempt" >&2
         exit 1
     fi
     echo "[entrypoint] hermes installed: $(${HERMES_BIN} --version 2>&1 | head -1)"
