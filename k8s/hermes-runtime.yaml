@@ -6,7 +6,7 @@
 #
 # Prerequisite Secrets (created via kubectl, NOT in version control):
 #   1. multica-hermes-runtime-pat — daemon auth (PAT from dashboard)
-#   2. multica-llm-secrets         — Anthropic API key for hermes provider
+#   2. multica-llm-secrets         — codex.mindops.net gateway API key (OpenAI-compatible)
 # See README.md for kubectl create secret commands.
 
 ---
@@ -118,12 +118,16 @@ spec:
             - name: MULTICA_AGENT_TIMEOUT
               value: "30m"
 
-            # ---- Anthropic API key for hermes-agent ----
-            - name: ANTHROPIC_API_KEY
+            # ---- LLM provider: codex.mindops.net gateway (OpenAI-compatible) ----
+            # Hermes-agent uses OpenAI SDK under the hood; OPENAI_BASE_URL + OPENAI_API_KEY
+            # route all completions through Ali's gateway instead of api.openai.com.
+            - name: OPENAI_BASE_URL
+              value: "https://codex.mindops.net/v1"
+            - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: multica-llm-secrets
-                  key: anthropic-api-key
+                  key: codex-api-key
 
           volumeMounts:
             # Multica auth config (PAT) mounted from Secret

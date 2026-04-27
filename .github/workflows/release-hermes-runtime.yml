@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - 'feat/hermes-cloud-runtime'  # pilot — image build runs from feature branch until merged to main
     paths:
       - 'Dockerfile.hermes-runtime'
       - 'docker/hermes-runtime-entrypoint.sh'

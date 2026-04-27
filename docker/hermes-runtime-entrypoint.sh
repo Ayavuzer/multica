@@ -39,26 +39,33 @@ else
     exit 1
 fi
 
-# ---------- Hermes provider config (Anthropic) ----------
+# ---------- Hermes provider config (codex.mindops.net gateway, OpenAI-compatible) ----------
 HERMES_HOME="${HOME}/.hermes"
 mkdir -p "${HERMES_HOME}"
 
-# Only run hermes login on first start — subsequent restarts use persisted config from PVC
-if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ ! -f "${HERMES_HOME}/.bootstrap-complete" ]; then
-    echo "[entrypoint] Bootstrapping hermes-agent provider config (first run)..."
+# Hermes-agent's OpenAI provider uses OPENAI_BASE_URL + OPENAI_API_KEY env vars
+# directly (OpenAI SDK convention). Setting these env vars in K8s deployment is
+# usually enough — no `hermes login` needed.
+#
+# Belt-and-suspenders: still call `hermes login openai` on first run to register
+# the provider in hermes config (in case some flows read from config.toml not env).
+if [ -n "${OPENAI_API_KEY:-}" ] && [ ! -f "${HERMES_HOME}/.bootstrap-complete" ]; then
+    echo "[entrypoint] Bootstrapping hermes-agent provider config (first run, OpenAI-compatible)..."
+    echo "[entrypoint] Provider base URL: ${OPENAI_BASE_URL:-(default api.openai.com)}"
 
-    # hermes login expects interactive prompt; use stdin pipe with the API key.
-    # Some hermes versions support --api-key flag; we try both.
-    if /home/multica/.local/bin/hermes login anthropic --api-key "${ANTHROPIC_API_KEY}" 2>/dev/null; then
-        echo "[entrypoint] hermes login anthropic --api-key succeeded"
+    # Try various flag combinations — Hermes CLI flag names vary across versions.
+    if /home/multica/.local/bin/hermes login openai --api-key "${OPENAI_API_KEY}" --base-url "${OPENAI_BASE_URL:-}" 2>/dev/null; then
+        echo "[entrypoint] hermes login openai (with --base-url) succeeded"
+    elif /home/multica/.local/bin/hermes login openai --api-key "${OPENAI_API_KEY}" 2>/dev/null; then
+        echo "[entrypoint] hermes login openai --api-key succeeded (base URL via env var)"
     else
-        echo "${ANTHROPIC_API_KEY}" | /home/multica/.local/bin/hermes login anthropic \
-            || echo "[entrypoint] WARN: hermes login anthropic via stdin failed (may need manual setup)"
+        echo "${OPENAI_API_KEY}" | /home/multica/.local/bin/hermes login openai \
+            || echo "[entrypoint] WARN: hermes login openai via stdin failed; will rely on OPENAI_* env vars"
     fi
 
-    # Set default model (best-effort — hermes config command is interactive)
-    /home/multica/.local/bin/hermes model anthropic claude-sonnet-4-5 2>/dev/null \
-        || echo "[entrypoint] WARN: hermes model select failed (default will be picked from registry)"
+    # Set default model — gateway exposes claude-sonnet-4-5 as model name.
+    /home/multica/.local/bin/hermes model openai claude-sonnet-4-5 2>/dev/null \
+        || echo "[entrypoint] WARN: hermes model select failed (will fall back to provider default)"
 
     touch "${HERMES_HOME}/.bootstrap-complete"
 fi
