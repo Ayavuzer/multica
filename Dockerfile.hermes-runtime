@@ -27,13 +27,20 @@ RUN cd server && CGO_ENABLED=0 go build \
 # ---------- Stage 2: Runtime ----------
 FROM python:3.11-slim-bookworm
 
-# OS deps for hermes-agent (git for skills, curl for installer, ca-certs for HTTPS, jq for entrypoint)
+# OS deps for hermes-agent:
+#   git       — skills installation (hermes skills install)
+#   curl      — Hermes installer + Node.js download
+#   ca-certs  — HTTPS
+#   jq        — entrypoint config validation
+#   xz-utils  — Hermes installer pulls Node.js as .tar.xz, needs `xz` to extract
+#   tzdata    — daemon log timestamps
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
         jq \
         tzdata \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user — daemon and hermes both run as this user.
