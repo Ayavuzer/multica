@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Multica fork — guard against accidental push to upstream multica-ai/multica.
+# Reads `<local_ref> <local_sha> <remote_ref> <remote_sha>` lines from stdin and
+# the destination URL from $2. Block if URL points at multica-ai/*.
+#
+# Bypass (only when intentional, e.g. submitting an upstream contribution):
+#   ALLOW_MULTICA_AI_PUSH=1 git push <remote> <branch>
+
+set -e
+
+remote_url="${2:-}"
+
+if [[ -n "${ALLOW_MULTICA_AI_PUSH:-}" ]]; then
+  exit 0
+fi
+
+if [[ "$remote_url" == *"multica-ai/"* ]]; then
+  echo "" >&2
+  echo "✗ BLOCKED: push target points to upstream multica-ai/* ($remote_url)." >&2
+  echo "" >&2
+  echo "  Multica fork policy: this checkout pushes ONLY to forks owned by us" >&2
+  echo "  (e.g. github.com/Ayavuzer/multica)." >&2
+  echo "" >&2
+  echo "  If this is intentional (rare — submitting an upstream PR), bypass with:" >&2
+  echo "    ALLOW_MULTICA_AI_PUSH=1 git push ..." >&2
+  echo "" >&2
+  echo "  Incident reference: multica-ai/multica#1754 (closed, accidental)." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0
