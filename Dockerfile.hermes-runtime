@@ -70,7 +70,8 @@ ENV PATH="/home/multica/.local/bin:${PATH}"
 #   - More reliable (network conditions inside K8s pod are different)
 #   - Persistent (~/.hermes is on PVC, install happens once)
 #   - Auto-updates (just bump HERMES_VERSION env on pod restart)
-RUN /usr/local/bin/multica --version
+# Note: multica CLI uses `version` subcommand, not `--version` flag.
+RUN /usr/local/bin/multica version
 
 # Hermes will be installed by entrypoint into ${HOME}/.hermes (PVC-backed)
 # on first pod start. Subsequent restarts skip install (idempotent check).
