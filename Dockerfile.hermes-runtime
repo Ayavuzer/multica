@@ -57,27 +57,25 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
 COPY --from=go-builder /src/server/bin/multica /usr/local/bin/multica
 RUN chmod +x /usr/local/bin/multica
 
-# Switch to non-root user for hermes install (it builds in user dir)
+# Switch to non-root user for runtime
 USER multica
 WORKDIR /home/multica
 
-# Install hermes-agent (Nous Research) into ~/.local
-# Pin via HERMES_VERSION build arg (default: latest from main)
-ARG HERMES_VERSION=latest
-RUN curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
-    | HERMES_VERSION=${HERMES_VERSION} bash || \
-    (echo "hermes installer failed — falling back to git clone" && \
-     git clone --depth=1 https://github.com/NousResearch/hermes-agent.git /home/multica/.hermes/hermes-agent && \
-     cd /home/multica/.hermes/hermes-agent && \
-     uv pip install --system --user -e . && \
-     ln -sf /home/multica/.hermes/hermes-agent/bin/hermes /home/multica/.local/bin/hermes)
-
-# PATH includes ~/.local/bin so daemon's exec.LookPath finds hermes
+# PATH includes ~/.local/bin so daemon's exec.LookPath finds hermes (after entrypoint installs it)
 ENV PATH="/home/multica/.local/bin:${PATH}"
 
-# Verify both binaries are present and runnable
-RUN /usr/local/bin/multica --version \
-    && /home/multica/.local/bin/hermes --version
+# Verify daemon binary only — hermes is installed at runtime by entrypoint into PVC.
+# Rationale: build-time install fails in CI sandbox (Playwright browser deps,
+# git submodule auth, Node.js download flakiness). Runtime install on PVC is:
+#   - More reliable (network conditions inside K8s pod are different)
+#   - Persistent (~/.hermes is on PVC, install happens once)
+#   - Auto-updates (just bump HERMES_VERSION env on pod restart)
+RUN /usr/local/bin/multica --version
+
+# Hermes will be installed by entrypoint into ${HOME}/.hermes (PVC-backed)
+# on first pod start. Subsequent restarts skip install (idempotent check).
+ARG HERMES_VERSION=latest
+ENV HERMES_VERSION=${HERMES_VERSION}
 
 # Daemon defaults (can be overridden by K8s env)
 ENV MULTICA_HERMES_PATH=/home/multica/.local/bin/hermes

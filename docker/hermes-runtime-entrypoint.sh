@@ -39,9 +39,43 @@ else
     exit 1
 fi
 
-# ---------- Hermes provider config (codex.mindops.net gateway, OpenAI-compatible) ----------
+# ---------- Hermes runtime install (PVC-backed, idempotent) ----------
+# Install hermes-agent into ${HOME}/.local on first start. PVC at ${HOME}/.hermes
+# persists state, but the binary itself lives at ${HOME}/.local/bin/hermes which
+# is inside the container's writable layer — re-installs on every fresh pod
+# (acceptable cost: ~30-60s once per pod restart, matches Multica's lokal flow).
 HERMES_HOME="${HOME}/.hermes"
-mkdir -p "${HERMES_HOME}"
+HERMES_BIN="${HOME}/.local/bin/hermes"
+mkdir -p "${HERMES_HOME}" "${HOME}/.local/bin"
+
+if [ ! -x "${HERMES_BIN}" ]; then
+    echo "[entrypoint] Installing hermes-agent (Nous Research) into ${HOME}/.local ..."
+    # Skip optional Playwright browser install — adds ~500MB and fails in
+    # restricted networks. Browser tools (web_search via Chromium) won't work,
+    # but daemon/ACP/code execution all do — and codex gateway can substitute
+    # web search if needed.
+    export HERMES_SKIP_PLAYWRIGHT=1
+    export HERMES_NO_BROWSER=1
+
+    if curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh \
+        | HERMES_VERSION="${HERMES_VERSION:-latest}" bash; then
+        echo "[entrypoint] hermes installer succeeded"
+    else
+        echo "[entrypoint] hermes installer failed — pod will exit, K8s will restart" >&2
+        echo "[entrypoint] Common cause: transient network failure. Liveness probe + restart will retry." >&2
+        exit 1
+    fi
+
+    if [ ! -x "${HERMES_BIN}" ]; then
+        echo "[entrypoint] ERROR: hermes binary not found at ${HERMES_BIN} after install" >&2
+        exit 1
+    fi
+    echo "[entrypoint] hermes installed: $(${HERMES_BIN} --version 2>&1 | head -1)"
+else
+    echo "[entrypoint] hermes already installed: $(${HERMES_BIN} --version 2>&1 | head -1)"
+fi
+
+# ---------- Hermes provider config (codex.mindops.net gateway, OpenAI-compatible) ----------
 
 # Hermes-agent's OpenAI provider uses OPENAI_BASE_URL + OPENAI_API_KEY env vars
 # directly (OpenAI SDK convention). Setting these env vars in K8s deployment is
